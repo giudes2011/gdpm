@@ -175,7 +175,7 @@ NO_CONFIGURE=false
 spinner() {
     local pid=$!
     local delay=0.1
-    local spinstr='|/-\'
+    local spinstr='|/-\\'
     tput civis
     while ps -p $pid > /dev/null; do
         local temp=${spinstr#?}
