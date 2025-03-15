@@ -43,7 +43,7 @@ clean_temp_files() {
 
 check_update() {
     echo -e "\033[0;32mChecking for script updates...\033[0m"
-    SCRIPT_URL="http://127.0.0.1:5500/gdpm.sh"
+    SCRIPT_URL="https://raw.githubusercontent.com/giudes2011/gdpm/refs/heads/main/gdpm.sh"
     TEMP_SCRIPT="/tmp/gdpm.sh"
 
     if wget -q --show-progress "$SCRIPT_URL" -O "$TEMP_SCRIPT"; then
@@ -112,7 +112,7 @@ if [[ "$1" == "--list" || "$1" == "-l" ]]; then
 fi
 if [[ "$1" == "--update" || "$1" == "-u" ]]; then
     echo -e "\033[0;32mUpdating script...\033[0m"
-    SCRIPT_URL="http://127.0.0.1:5500/gdpm.sh"
+    SCRIPT_URL="https://raw.githubusercontent.com/giudes2011/gdpm/refs/heads/main/gdpm.sh"
     TEMP_SCRIPT="/tmp/gdpm.sh"
 
     if wget -q --show-progress "$SCRIPT_URL" -O "$TEMP_SCRIPT"; then
