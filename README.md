@@ -34,6 +34,7 @@ sudo ./gdpm.sh [--verbose|-v] [--list|-l] [--update|-u] [--check-update|-c] [--c
 - `--commands, -C`:  List available commands
 - `--backup, -b`:  Backup installed packages
 - `--restore, -r`:  Restore packages from backup
+- `--handle-warnings, -w`:  Handle warnings during operations
 - `--help, -h`:  Show this help message
 - `<install|uninstall>`: Specify whether to install or uninstall a package.
 - `<package_url>`: The URL of the package to install or uninstall.
