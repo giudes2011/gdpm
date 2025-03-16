@@ -13,6 +13,12 @@ GDPM is a simple command-line tool written in Shell-Script for managing software
 
 ## Usage
 
+If it's your first time running GDPM, in the same directory as `gdpm.sh`, run:
+
+```
+chmod +x gdpm.sh
+```
+
 To use GDPM, run the following command in the terminal:
 
 ```

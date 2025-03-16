@@ -5,20 +5,21 @@
 #    / ___\ / __ |\____ \ /     \ 
 #   / /_/  > /_/ ||  |_> >  Y Y  \  simple package manager
 #   \___  /\____ ||   __/|__|_|  /          for GNU/Linux
-#  /_____/      \/|__|         \/           ver 0.1
+#  /_____/      \/|__|         \/           ver 0.2
 #  
 
 show_help() {
-    echo -e "\033[0;32mUsage: sudo $0 [--verbose|-v] [--list|-l] [--update|-u] [--check-update|-c] [--commands|-C] [--backup|-b] [--restore|-r] [--help|-h] <install|uninstall> <package_url> [configure_options]\033[0m"
+    echo -e "\033[0;32mUsage: sudo $0 [--verbose|-v] [--list|-l] [--update|-u] [--check-update|-c] [--commands|-C] [--backup|-b] [--restore|-r] [--handle-warnings|-w] [--help|-h] <install|uninstall> <package_url> [configure_options]\033[0m"
     echo -e "\033[0;32mOptions:\033[0m"
-    echo -e "\033[0;32m  --verbose, -v       Enable verbose output\033[0m"
-    echo -e "\033[0;32m  --list, -l          List installed packages\033[0m"
-    echo -e "\033[0;32m  --update, -u        Update the script\033[0m"
-    echo -e "\033[0;32m  --check-update, -c  Check if an update is available\033[0m"
-    echo -e "\033[0;32m  --commands, -C      List available commands\033[0m"
-    echo -e "\033[0;32m  --backup, -b        Backup installed packages\033[0m"
-    echo -e "\033[0;32m  --restore, -r       Restore packages from backup\033[0m"
-    echo -e "\033[0;32m  --help, -h          Show this help message\033[0m"
+    echo -e "\033[0;32m  --verbose, -v          Enable verbose output\033[0m"
+    echo -e "\033[0;32m  --list, -l             List installed packages\033[0m"
+    echo -e "\033[0;32m  --update, -u           Update the script\033[0m"
+    echo -e "\033[0;32m  --check-update, -c     Check if an update is available\033[0m"
+    echo -e "\033[0;32m  --commands, -C         List available commands\033[0m"
+    echo -e "\033[0;32m  --backup, -b           Backup installed packages\033[0m"
+    echo -e "\033[0;32m  --restore, -r          Restore packages from backup\033[0m"
+    echo -e "\033[0;32m  --handle-warnings, -w  Handle warnings during operations\033[0m"
+    echo -e "\033[0;32m  --help, -h             Show this help message\033[0m"
 }
 
 list_commands() {
@@ -96,21 +97,31 @@ manage_logs() {
     mv "$ERROR_LOG" "$LOG_DIR/$(date +%Y%m%d_%H%M%S)_error.log"
 }
 
+handle_warnings() {
+    echo -e "\033[0;33mThe following warnings were encountered:\033[0m"
+    grep -E "warning:|obsolete" $ERROR_LOG | sort | uniq | while read -r line; do
+        echo -e "\033[0;33m$line\033[0m"
+    done
+}
+
 if [ -z "$1" ]; then
     show_help
     exit 1
 fi
+
 VERBOSE=false
-if [[ "$1" == "--verbose" || "$1" == "-v" ]]; then
+HANDLE_WARNINGS=false
+
+while [[ "$1" =~ ^- && ! "$1" == "--" ]]; do case $1 in
+ ( -v | --verbose )
     VERBOSE=true
-    shift
-fi
-if [[ "$1" == "--list" || "$1" == "-l" ]]; then
+    ;;
+ ( -l | --list )
     echo -e "\033[0;32mInstalled packages:\033[0m"
     ls /usr/local/bin
     exit 0
-fi
-if [[ "$1" == "--update" || "$1" == "-u" ]]; then
+    ;;
+ ( -u | --update )
     echo -e "\033[0;32mUpdating script...\033[0m"
     SCRIPT_URL="https://raw.githubusercontent.com/giudes2011/gdpm/refs/heads/main/gdpm.sh"
     TEMP_SCRIPT="/tmp/gdpm.sh"
@@ -129,24 +140,34 @@ if [[ "$1" == "--update" || "$1" == "-u" ]]; then
         echo -e "\033[0;31mPlease check if the server is running and the URL is correct.\033[0m"
     fi
     exit 0
-fi
-if [[ "$1" == "--check-update" || "$1" == "-c" ]]; then
+    ;;
+ ( -c | --check-update )
     check_update
-fi
-if [[ "$1" == "--commands" || "$1" == "-C" ]]; then
+    ;;
+ ( -C | --commands )
     list_commands
     exit 0
-fi
-if [[ "$1" == "--backup" || "$1" == "-b" ]]; then
+    ;;
+ ( -b | --backup )
     backup_packages
-fi
-if [[ "$1" == "--restore" || "$1" == "-r" ]]; then
+    ;;
+ ( -r | --restore )
     restore_packages
-fi
-if [[ "$1" == "--help" || "$1" == "-h" ]]; then
+    ;;
+ ( -w | --handle-warnings )
+    HANDLE_WARNINGS=true
+    ;;
+ ( -h | --help )
     show_help
     exit 0
-fi
+    ;;
+ ( -* )
+    echo -e "\033[0;31mInvalid option: $1\033[0m"
+    show_help
+    exit 1
+    ;;
+esac; shift; done
+if [[ "$1" == '--' ]]; then shift; fi
 
 COMMAND="$1"
 shift
@@ -170,6 +191,8 @@ if [[ "$PACKAGE_URL" == *.git ]]; then
     rm -rf "/tmp/$PACKAGE_NAME"
 fi
 
+UNINSTALL_PKG=false
+SAFE_CHECK=false
 NO_CONFIGURE=false
 
 spinner() {
@@ -271,11 +294,115 @@ compiler() {
     else
         echo "done in $elapsed seconds"
     fi
+    if [ "$HANDLE_WARNINGS" = true ]; then
+        handle_warnings
+    fi
+}
+
+run_autoupdate() {
+    if [ -f "configure.ac" ]; then
+        echo -e "\033[0;32mRunning autoupdate... [3/4]\033[0m"
+        local checksum_before=$(md5sum configure.ac | awk '{print $1}')
+        if [ "$VERBOSE" = true ]; then
+            autoupdate 2>&1 | tee $ERROR_LOG
+        else
+            (autoupdate > $ERROR_LOG 2>&1) & spinner
+        fi
+        if [ $? -ne 0 ]; then
+            cat $ERROR_LOG
+            echo -e "\033[0;31mError: autoupdate failed.\033[0m"
+            exit 1
+        fi
+        local checksum_after=$(md5sum configure.ac | awk '{print $1}')
+        if [ "$checksum_before" = "$checksum_after" ]; then
+            echo -e "\033[0;33mWarning: autoupdate did not modify configure.ac\033[0m"
+        fi
+        if [ "$HANDLE_WARNINGS" = true ]; then
+            handle_warnings
+        fi
+    else
+        echo -e "\033[0;33mWarning: configure.ac not found. Skipping autoupdate.\033[0m"
+    fi
+}
+
+run_libtoolize() {
+    echo -e "\033[0;32mRunning libtoolize... [1/4]\033[0m"
+    if [ "$VERBOSE" = true ]; then
+        libtoolize --force --copy 2>&1 | tee $ERROR_LOG
+    else
+        (libtoolize --force --copy > $ERROR_LOG 2>&1) & spinner
+    fi
+    if [ $? -ne 0 ]; then
+        cat $ERROR_LOG
+        echo -e "\033[0;31mError: libtoolize failed.\033[0m"
+        exit 1
+    fi
+    if [ "$HANDLE_WARNINGS" = true ]; then
+            handle_warnings
+    fi
+}
+
+run_aclocal() {
+    echo -e "\033[0;32mRunning aclocal...    [2/4]\033[0m"
+    if [ "$VERBOSE" = true ]; then
+        aclocal 2>&1 | tee $ERROR_LOG
+    else
+        (aclocal > $ERROR_LOG 2>&1) & spinner
+    fi
+    if [ $? -ne 0 ]; then
+        cat $ERROR_LOG
+        echo -e "\033[0;31mError: aclocal failed.\033[0m"
+        exit 1
+    fi
+    if [ "$HANDLE_WARNINGS" = true ]; then
+            handle_warnings
+    fi
+}
+
+run_autoreconf() {
+    echo -e "\033[0;32mRunning autoreconf... [4/4]\033[0m"
+    if [ "$VERBOSE" = true ]; then
+        autoreconf -fvi 2>&1 | tee $ERROR_LOG
+    else
+        (autoreconf -fvi > $ERROR_LOG 2>&1) & spinner
+    fi
+    if [ $? -ne 0 ]; then
+        cat $ERROR_LOG
+        echo -e "\033[0;31mError: autoreconf failed.\033[0m"
+        exit 1
+    fi
+    if [ "$HANDLE_WARNINGS" = true ]; then
+            handle_warnings
+    fi
+}
+
+pre_conf() {
+    if [ "$UNINSTALL_PKG" = true ]; then
+        cd "$HOME/gdpm_packages/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Not installed\033[0m"; exit 1; }
+    else
+        cd "/tmp/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
+    fi
+    run_libtoolize
+    run_aclocal
+    run_autoupdate
+    run_autoreconf
+    if [ "$UNINSTALL_PKG" = true ]; then
+        cd "$HOME/gdpm_packages/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Not installed\033[0m"; exit 1; }
+    else
+        cd "/tmp/$BUILD_DIR" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
+    fi
 }
 
 configure() {
-    cd "/tmp/$BUILD_DIR" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
+    if [ "$UNINSTALL_PKG" = true ]; then
+        cd "$HOME/gdpm_packages/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Not installed\033[0m"; exit 1; }
+    else
+        cd "/tmp/$BUILD_DIR" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
+    fi
     if [ -x "$CONFIGURE_SCRIPT" ]; then
+        pre_conf
+        echo ''
+        echo -e "\033[0;32mConfiguring $PACKAGE_NAME...\033[0m"
         if [ "$VERBOSE" = true ]; then
             "$CONFIGURE_SCRIPT" $CONFIGURE_OPTIONS 2>&1 | tee $ERROR_LOG
             wait $!
@@ -293,6 +420,9 @@ configure() {
             echo "done in $elapsed seconds"
         fi
     elif [ -x "$CONFIG_SCRIPT" ]; then
+        pre_conf
+        echo ''
+        echo -e "\033[0;32mConfiguring $PACKAGE_NAME...\033[0m"
         if [ "$VERBOSE" = true ]; then
             "$CONFIG_SCRIPT" $CONFIGURE_OPTIONS 2>&1 | tee $ERROR_LOG
             wait $!
@@ -310,7 +440,11 @@ configure() {
             echo "done in $elapsed seconds"
         fi
     elif [ -x $AUTOGEN_SCRIPT ]; then
-        cd "/tmp/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Failed to enter source directory.\033[0m"; exit 1; }
+        if [ "$UNINSTALL_PKG" = true ]; then
+            cd "$HOME/gdpm_packages/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Not installed\033[0m"; exit 1; }
+        else
+            cd "/tmp/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
+        fi
         if [ "$VERBOSE" = true ]; then
             $AUTOGEN_SCRIPT 2>&1 | tee $ERROR_LOG
             wait $!
@@ -318,7 +452,36 @@ configure() {
             ($AUTOGEN_SCRIPT > $ERROR_LOG 2>&1) & spinner
             wait $!
         fi
-        cd "/tmp/$BUILD_DIR" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
+        if [ "$UNINSTALL_PKG" = true ]; then
+            cd "$HOME/gdpm_packages/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Not installed\033[0m"; exit 1; }
+        else
+            cd "/tmp/$BUILD_DIR" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
+        fi
+        configure
+        wait $!
+        if [ $? -ne 0 ]; then
+            cat $ERROR_LOG
+            echo -e "\033[0;31mError: Configuration failed.\033[0m"
+            exit 1
+        fi
+    elif [ -x $BOOTSTRAP_SCRIPT ]; then
+        if [ "$UNINSTALL_PKG" = true ]; then
+            cd "$HOME/gdpm_packages/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Not installed\033[0m"; exit 1; }
+        else
+            cd "/tmp/$PACKAGE_DIR" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
+        fi
+        if [ "$VERBOSE" = true ]; then
+            $BOOTSTRAP_SCRIPT 2>&1 | tee $ERROR_LOG
+            wait $!
+        else
+            ($BOOTSTRAP_SCRIPT > $ERROR_LOG 2>&1) & spinner
+            wait $!
+        fi
+        if [ "$UNINSTALL_PKG" = true ]; then
+            cd "$HOME/gdpm_packages/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Not installed\033[0m"; exit 1; }
+        else
+            cd "/tmp/$BUILD_DIR" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
+        fi
         configure
         wait $!
         if [ $? -ne 0 ]; then
@@ -327,7 +490,11 @@ configure() {
             exit 1
         fi
     else
-        cd "/tmp/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Failed to enter source directory.\033[0m"; exit 1; }
+        if [ "$UNINSTALL_PKG" = true ]; then
+            cd "$HOME/gdpm_packages/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Not installed\033[0m"; exit 1; }
+        else
+            cd "/tmp/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
+        fi
         echo -e "\033[0;33mWarning: No configure script found. Proceeding with default options.\033[0m"
         NO_CONFIGURE=true
     fi
@@ -350,10 +517,10 @@ install_package() {
     mkdir -p "/tmp/$BUILD_DIR"
     cd "/tmp/$BUILD_DIR" || { echo -e "\033[0;31mError: Failed to enter build directory.\033[0m"; exit 1; }
     echo ''
-    echo -e "\033[0;32mConfiguring $PACKAGE_NAME...\033[0m"
     CONFIGURE_SCRIPT="../$PACKAGE_NAME/configure"
     CONFIG_SCRIPT="../$PACKAGE_NAME/config"
     AUTOGEN_SCRIPT="../$PACKAGE_NAME/autogen.sh"
+    BOOTSTRAP_SCRIPT="../$PACKAGE_NAME/bootstrap"
     start_time=$(date +%s%3N)
     configure
     compiler
@@ -383,8 +550,8 @@ install_package() {
     echo ''
     echo -e "\033[0;32mFinishing installation...\033[0m"
     echo ''
-    mkdir -p "$HOME/gdpm_packages/$PACKAGE_NAME"
-    cp -r "/tmp/$BUILD_DIR" "$HOME/gdpm_packages/$PACKAGE_NAME/"
+    mkdir -p "$HOME/gdpm_packages/"
+    cp -r "/tmp/$PACKAGE_NAME" "$HOME/gdpm_packages/"
     clean_temp_files
     manage_logs
     if [ "$SAFE_CHECK" = true ]; then
@@ -407,6 +574,14 @@ uninstall_package() {
     echo -e "\033[0;32mUninstalling $PACKAGE_NAME...\033[0m"
     echo ''
     cd "$HOME/gdpm_packages/$PACKAGE_NAME" || { echo -e "\033[0;31mError: Not installed\033[0m"; exit 1; }
+    CONFIGURE_SCRIPT="./configure"
+    CONFIG_SCRIPT="./config"
+    AUTOGEN_SCRIPT="./autogen.sh"
+    BOOTSTRAP_SCRIPT="./bootstrap"
+    start_time=$(date +%s%3N)
+    UNINSTALL_PKG=true
+    configure
+    start_time=$(date +%s%3N)
     if [ "$VERBOSE" = true ]; then
         make clean 2>&1 | tee $ERROR_LOG
         wait $!
@@ -417,6 +592,14 @@ uninstall_package() {
         wait $!
         (make uninstall > $ERROR_LOG 2>&1) & spinner
         wait $!
+    fi
+    end_time=$(date +%s%3N)
+    elapsed=$(echo "scale=3; ($end_time - $start_time) / 1000" | bc)
+    echo "done in $elapsed seconds"
+    if [ $? -ne 0 ]; then
+        echo -e "\033[0;31mError: Uninstallation failed.\033[0m"
+        cat "$ERROR_LOG"
+        exit 1
     fi
     cd ..
     clean_temp_files
@@ -434,7 +617,7 @@ case "$COMMAND" in
         uninstall_package
         ;;
     *)
-        echo -e "\033[0;31mInvalid command. Usage: sudo $0 [--verbose|-v] [--list|-l] [--update|-u] [--check-update|-c] [--commands|-C] [--backup|-b] [--restore|-r] [--help|-h] <install|uninstall> <package_url> [configure_options]\033[0m"
+        echo -e "\033[0;31mInvalid command. Usage: sudo $0 [--verbose|-v] [--list|-l] [--update|-u] [--check-update|-c] [--commands|-C] [--backup|-b] [--restore|-r] [--handle-warnings|-w] [--help|-h] <install|uninstall> <package_url> [configure_options]\033[0m"
         exit 1
         ;;
 esac
