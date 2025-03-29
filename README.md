@@ -22,11 +22,7 @@ chmod +x gdpm.sh
 To use GDPM, run the following command in the terminal:
 
 ```
-<<<<<<< HEAD
 sudo ./gdpm.sh [options] <install|uninstall> <package_url> [configure_options]
-=======
-sudo ./gdpm.sh [--verbose|-v] [--list|-l] [--update|-u] [--check-update|-c] [--commands|-C] [--backup|-b] [--restore|-r] [--help|-h] <install|uninstall> <package_url> [configure_options]
->>>>>>> 01dde6319bf9057b133c044ba0fb449c02fc98f7
 ```
 
 ### Arguments
